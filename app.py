@@ -173,7 +173,7 @@ with st.sidebar:
                 else:
                     page_text = "\n\n".join([record.payload.get("page_content", "") for record in records])
                     summary_prompt = f"""You are an expert technical synthesizer. Summarize the following text from Page {target_page}.
- 
+
                     --- PAGE TEXT ---
                     {page_text}
                     --- END TEXT ---
@@ -181,15 +181,24 @@ with st.sidebar:
                     Summary:"""
                     summary_result = llm_engine.invoke(summary_prompt)
                     
+                    # Robust extraction of the clean text content from the LangChain response object
+                    if hasattr(summary_result, 'content'):
+                        clean_summary = summary_result.content
+                    elif isinstance(summary_result, dict) and 'content' in summary_result:
+                        clean_summary = summary_result['content']
+                    else:
+                        clean_summary = str(summary_result)
+                        
+                    clean_summary = clean_summary.strip()
+                    
                     if "messages" not in st.session_state:
                         st.session_state.messages = []
                     
                     st.session_state.messages.append({"role": "user", "content": f"Summarize page {target_page}."})
-                    st.session_state.messages.append({"role": "assistant", "content": summary_result})
+                    st.session_state.messages.append({"role": "assistant", "content": clean_summary})
                     st.rerun() 
             else:
                 st.error("Please index a document first.")
-
 # --- UI MAIN INTERFACE: CHAT PIPELINE ---
 st.markdown("### Ask specific questions about the document data")
 
