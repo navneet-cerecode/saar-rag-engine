@@ -15,6 +15,7 @@ from PIL import Image
 import shutil  # <--- Add this new import
 import pytesseract
 
+
 # Tell Python where your Windows Tesseract engine is installed:
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
@@ -64,6 +65,12 @@ def initialize_models():
     return client, embeddings, reranker, llm
 
 qdrant_client, embeddings_model, reranker_model, llm_engine = initialize_models()
+
+tesseract_path = shutil.which("tesseract")
+if tesseract_path:
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
+else:
+    print("Warning: Tesseract executable not found in system path.")
 
 # --- PHASE 1: LAYOUT-AWARE INGESTION ENGINE ---
 def extract_layout_aware_pdf(file_path, progress_bar=None, status_text=None):
