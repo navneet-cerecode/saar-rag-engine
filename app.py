@@ -26,19 +26,51 @@ else:
 COLLECTION_NAME = "saar_documents"
 DB_PATH = "qdrant_db"
 
+def inject_custom_css():
+    """Inject custom CSS to hide default Streamlit elements and polish the UI."""
+    st.markdown("""
+        <style>
+        /* Hide main menu and footer */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        
+        /* Adjust top padding for a cleaner look */
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            max-width: 900px;
+        }
+        
+        /* Style the chat input container */
+        .stChatInputContainer {
+            padding-bottom: 20px;
+        }
+        
+        /* Sidebar styling */
+        [data-testid="stSidebar"] {
+            background-color: #f8f9fa;
+        }
+        
+        /* Dark mode compatibility for sidebar */
+        @media (prefers-color-scheme: dark) {
+            [data-testid="stSidebar"] {
+                background-color: #1e1e20;
+            }
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
 @st.cache_resource
 def initialize_models():
     """Cache models and database connections for stable CPU execution."""
-    
-    # 1. Initialize Database with Self-Healing
     try:
         client = QdrantClient(path=DB_PATH)
     except RuntimeError:
-        # If the server crashes trying to read an incompatible/corrupted DB, wipe it clean
         print("Corrupted database detected. Executing self-healing wipe...")
         if os.path.exists(DB_PATH):
             shutil.rmtree(DB_PATH)
-        client = QdrantClient(path=DB_PATH) # Recreate fresh
+        client = QdrantClient(path=DB_PATH) 
         
     if not client.collection_exists(COLLECTION_NAME):
         client.create_collection(
@@ -46,7 +78,6 @@ def initialize_models():
             vectors_config=VectorParams(size=768, distance=Distance.COSINE)
         )
         
-    # 2. Load Lightweight English Models explicitly onto the CPU
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-mpnet-base-v2",
         model_kwargs={'device': 'cpu'}
@@ -54,7 +85,6 @@ def initialize_models():
     
     reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', device='cpu')
     
-    # 3. Initialize Groq Llama 3.1 
     llm = ChatGroq(
         temperature=0, 
         model_name="llama-3.1-8b-instant",  
@@ -73,7 +103,6 @@ def extract_layout_aware_pdf(file_path, progress_bar=None, status_text=None):
             progress_bar.progress((page_num + 1) / total_pages)
             status_text.text(f"Parsing Page {page_num + 1} of {total_pages}...")
 
-        # 1. Extract structural tables first
         tabs = page.find_tables()
         table_rects = [t.bbox for t in tabs]
         
@@ -85,7 +114,6 @@ def extract_layout_aware_pdf(file_path, progress_bar=None, status_text=None):
             except Exception:
                 continue
 
-        # 2. Extract standard digital text
         blocks = page.get_text("blocks", sort=True)
         page_text_segments = []
         for b in blocks:
@@ -96,22 +124,18 @@ def extract_layout_aware_pdf(file_path, progress_bar=None, status_text=None):
 
         raw_text = "\n\n".join(page_text_segments)
 
-        # 3. OCR FALLBACK CRITERIA: If digital text is blank but the page has pixels/images
         if not raw_text.strip():
             if status_text:
                 status_text.text(f"Scanning image/scan on Page {page_num + 1} via OCR...")
             
-            # Render the PDF page directly to a high-resolution image in-memory
-            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for better OCR accuracy
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  
             img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
             
-            # Run OCR
             raw_text = pytesseract.image_to_string(img)
             
             if raw_text.strip():
                 raw_text = f"[OCR Scanned Content]\n" + raw_text
 
-        # 4. Chunk and save what we found
         if raw_text.strip():
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=300, separators=["\n\n", "\n", " ", ""])
             for chunk in text_splitter.split_text(raw_text):
@@ -120,17 +144,22 @@ def extract_layout_aware_pdf(file_path, progress_bar=None, status_text=None):
     return processed_documents
 
 # === APPLICATION UI ===
-st.set_page_config(page_title="S.A.A.R. Engine", layout="wide")
-st.title("S.A.A.R. | Semantic Analysis & Automated Retrieval")
+st.set_page_config(page_title="S.A.A.R. Engine", page_icon="✨", layout="wide")
+inject_custom_css()
 
-# Load models
+st.title("S.A.A.R. ✨")
+st.markdown("**Semantic Analysis & Automated Retrieval**")
+
 with st.spinner("Waking up AI models..."):
     qdrant_client, embeddings_model, reranker_model, llm_engine = initialize_models()
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("Document Processing")
-    uploaded_file = st.file_uploader("Upload PDF", type="pdf")
+    st.image("https://img.icons8.com/fluency/96/000000/artificial-intelligence.png", width=60)
+    st.header("Control Panel")
+    st.markdown("Upload and index your documents here.")
+    
+    uploaded_file = st.file_uploader("Upload PDF Document", type="pdf", label_visibility="collapsed")
     
     if uploaded_file:
         temp_path = f"temp_{uploaded_file.name}"
@@ -140,41 +169,41 @@ with st.sidebar:
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        if st.button("Index Document"):
+        if st.button("Index Document", type="primary", use_container_width=True):
             with st.spinner("Extracting text and tables..."):
                 documents = extract_layout_aware_pdf(temp_path, progress_bar, status_text)
                 
             if documents:
-                with st.spinner("Wiping old memory and generating new embeddings..."):
-                    # 1. WIPE THE OLD MEMORY
+                with st.spinner("Wiping old memory & generating embeddings..."):
                     if qdrant_client.collection_exists(COLLECTION_NAME):
                         qdrant_client.delete_collection(collection_name=COLLECTION_NAME)
                         
-                    # 2. CREATE A FRESH, EMPTY DATABASE
                     qdrant_client.create_collection(
                         collection_name=COLLECTION_NAME, 
                         vectors_config=VectorParams(size=768, distance=Distance.COSINE)
                     )
                     
-                    # 3. ADD THE NEW PDF
                     vector_store = QdrantVectorStore(
                         client=qdrant_client, collection_name=COLLECTION_NAME, embedding=embeddings_model
                     )
                     vector_store.add_documents(documents)
                     
-                st.success("Document successfully indexed! Old memory wiped.")
+                st.toast("Document successfully indexed!", icon="✅")
+                status_text.empty()
+                progress_bar.empty()
             else:
-                st.error("Could not extract any text from the document.")
+                st.toast("Could not extract text from document.", icon="❌")
                 
             if os.path.exists(temp_path):
                 os.remove(temp_path)
                 
     st.divider()
-    st.header("Page Summarizer")
-    target_page = st.number_input("Enter Page Number to Summarize:", min_value=1, step=1)
     
-    if st.button("Summarize Specific Page"):
-        with st.spinner(f"Fetching and summarizing page {target_page}..."):
+    st.header("Page Summarizer")
+    target_page = st.number_input("Enter Page Number:", min_value=1, step=1)
+    
+    if st.button("Summarize Page", use_container_width=True):
+        with st.spinner(f"Summarizing page {target_page}..."):
             if qdrant_client.collection_exists(COLLECTION_NAME):
                 page_filter = rest.Filter(
                     must=[rest.FieldCondition(key="metadata.page", match=rest.MatchValue(value=target_page))]
@@ -184,7 +213,7 @@ with st.sidebar:
                 )
                 
                 if not records:
-                    st.error(f"No text found on Page {target_page}.")
+                    st.toast(f"No text found on Page {target_page}.", icon="⚠️")
                 else:
                     page_text = "\n\n".join([record.payload.get("page_content", "") for record in records])
                     summary_prompt = f"""You are an expert technical synthesizer. Summarize the following text from Page {target_page}.
@@ -196,7 +225,6 @@ with st.sidebar:
 Summary:"""
                     summary_result = llm_engine.invoke(summary_prompt)
                     
-                    # Robust extraction of the clean text content from the LangChain response object
                     if hasattr(summary_result, 'content'):
                         clean_summary = summary_result.content
                     elif isinstance(summary_result, dict) and 'content' in summary_result:
@@ -209,26 +237,34 @@ Summary:"""
                     if "messages" not in st.session_state:
                         st.session_state.messages = []
                     
-                    st.session_state.messages.append({"role": "user", "content": f"Summarize page {target_page}."})
-                    st.session_state.messages.append({"role": "assistant", "content": clean_summary})
+                    st.session_state.messages.append({"role": "user", "content": f"Summarize page {target_page}.", "avatar": "🧑‍💻"})
+                    st.session_state.messages.append({"role": "assistant", "content": f"**Page {target_page} Summary:**\n\n{clean_summary}", "avatar": "✨"})
                     st.rerun() 
             else:
-                st.error("Please index a document first.")
+                st.toast("Please index a document first.", icon="⚠️")
 
 # --- MAIN CHAT UI ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Empty State Welcome Screen
+if not st.session_state.messages:
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: gray;'>Welcome to S.A.A.R.</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: gray;'>Upload and index a PDF in the sidebar, then ask me anything about it.</p>", unsafe_allow_html=True)
+
+# Display Chat History with Custom Avatars
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
+    avatar = message.get("avatar", "🧑‍💻" if message["role"] == "user" else "✨")
+    with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
 
 if query := st.chat_input("Ask a specific question..."):
-    st.session_state.messages.append({"role": "user", "content": query})
-    with st.chat_message("user"):
+    st.session_state.messages.append({"role": "user", "content": query, "avatar": "🧑‍💻"})
+    with st.chat_message("user", avatar="🧑‍💻"):
         st.markdown(query)
         
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar="✨"):
         with st.spinner("Retrieving context..."):
             if qdrant_client.collection_exists(COLLECTION_NAME):
                 vector_store = QdrantVectorStore(
@@ -265,7 +301,6 @@ Answer:"""
                     final_prompt = PromptTemplate.from_template(prompt_template).format(context=formatted_context, query=query)
                     raw_response = llm_engine.invoke(final_prompt)
                     
-                    # Extract text safely whether Groq returns an AIMessage object or a raw string
                     if hasattr(raw_response, 'content'):
                         response_text = raw_response.content
                     elif isinstance(raw_response, dict) and 'content' in raw_response:
@@ -283,4 +318,4 @@ Answer:"""
                 clean_answer = "Please upload and index a PDF document first."
                 
         st.markdown(clean_answer)
-        st.session_state.messages.append({"role": "assistant", "content": clean_answer})
+        st.session_state.messages.append({"role": "assistant", "content": clean_answer, "avatar": "✨"})
