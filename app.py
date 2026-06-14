@@ -45,7 +45,7 @@ def initialize_models():
     reranker = CrossEncoder("BAAI/bge-reranker-base", device='cpu')
     llm = ChatGroq(
         temperature=0, 
-        model_name="llama3-8b-8192", 
+        model_name="llama-3.1-8b-instant", 
         groq_api_key=st.secrets["GROQ_API_KEY"] # In production, hide this in st.secrets!
     )
     
@@ -161,9 +161,11 @@ with st.sidebar:
                 else:
                     page_text = "\n\n".join([record.payload.get("page_content", "") for record in records])
                     summary_prompt = f"""You are an expert technical synthesizer. Summarize the following text from Page {target_page}.
-                    <text>
+ 
+                    --- PAGE TEXT ---
                     {page_text}
-                    </text>
+                    --- END TEXT ---
+
                     Summary:"""
                     summary_result = llm_engine.invoke(summary_prompt)
                     
@@ -212,26 +214,28 @@ if query := st.chat_input("Ask a specific question..."):
                     
                     prompt_template = """You are an expert technical intelligence and synthesis engine. Your goal is to provide a helpful, comprehensive, and accurate answer to the user's query using the provided context blocks.
 
-                    <context>
-                    {context}
-                    </context>
+--- CONTEXT ---
+{context}
+--- END CONTEXT ---
 
-                    <instruction_rules>
-                    1. **Context Synthesis**: You are encouraged to connect relevant facts, data points, and concepts distributed across different context blocks to form a complete answer.
-                    2. **Logical Deduction**: If the context does not state the answer verbatim but contains clear, undeniable premises that logically imply the answer, use safe technical deduction to bridge the gap.
-                    3. **Acknowledge Limitations**: If the context provides partial information, answer using what is available, and clearly state what specific details are missing.
-                    4. **Hard Fallback**: Only trigger the fallback if the context blocks are completely irrelevant to the topic of the query. If there is absolute zero relation, output EXACTLY: "[NO_DATA]: Insufficient context."
-                    </instruction_rules>
+INSTRUCTION RULES:
+1. Context Synthesis: Connect relevant facts, data points, and concepts distributed across different context blocks to form a complete answer.
+2. Logical Deduction: If the context does not state the answer verbatim but contains clear, undeniable premises that logically imply the answer, use safe technical deduction to bridge the gap.
+3. Acknowledge Limitations: If the context provides partial information, answer using what is available, clearly stating what details are missing.
+4. Hard Fallback: If there is absolute zero relation to the text, output EXACTLY: "[NO_DATA]"
 
-                    User Query: {query}
-                    <scratchpad>"""
+User Query: {query}
+Answer:"""
                     
                     final_prompt = PromptTemplate.from_template(prompt_template).format(context=formatted_context, query=query)
                     raw_response = llm_engine.invoke(final_prompt)
                     
-                    clean_answer = raw_response.split("</scratchpad>")[-1].strip() if "</scratchpad>" in raw_response else re.sub(r'<scratchpad>.*?</scratchpad>', '', raw_response, flags=re.DOTALL).strip()
+                    # Extract text safely whether Groq returns an AIMessage object or a raw string
+                    response_text = raw_response.content if hasattr(raw_response, 'content') else str(raw_response)
+                    clean_answer = response_text.strip()
+                    
                     if "[NO_DATA]" in clean_answer:
-                        clean_answer = "Insufficient data in the provided document to answer this query."
+                        clean_answer = "The document mentions topics related to your query, but lacks specific details to give a definitive answer. Could you rephrase or specify a page number?"
                 else:
                     clean_answer = "No relevant text found. Make sure the document is indexed."
             else:
