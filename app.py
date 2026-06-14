@@ -12,6 +12,7 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
 import re
 from PIL import Image
+import shutil  # <--- Add this new import
 import pytesseract
 
 # Tell Python where your Windows Tesseract engine is installed:
@@ -27,14 +28,25 @@ COLLECTION_NAME = "pdf_knowledge_base"
 @st.cache_resource
 def initialize_models():
     """Cache models and database connections for stable CPU execution."""
-    # 1. Initialize Database
-    client = QdrantClient(path=DB_PATH)
+    
+    # 1. Initialize Database with Self-Healing
+    try:
+        client = QdrantClient(path=DB_PATH)
+    except RuntimeError:
+        # If the server crashes trying to read an incompatible/corrupted DB, wipe it clean
+        print("Corrupted database detected. Executing self-healing wipe...")
+        if os.path.exists(DB_PATH):
+            shutil.rmtree(DB_PATH)
+        client = QdrantClient(path=DB_PATH) # Recreate fresh
+        
     if not client.collection_exists(COLLECTION_NAME):
         client.create_collection(
             collection_name=COLLECTION_NAME, 
-            # Note: 768 is the correct size for the base-en model
             vectors_config=VectorParams(size=768, distance=Distance.COSINE)
         )
+        
+    # 2. Load Lightweight English Models explicitly onto the CPU
+    # ... (Keep the rest of your model loading code exactly the same)
         
     # 2. Load Lightweight English Models explicitly onto the CPU
     embeddings = HuggingFaceEmbeddings(
