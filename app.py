@@ -238,12 +238,17 @@ INSTRUCTION RULES:
 
 User Query: {query}
 Answer:"""
-                    
                     final_prompt = PromptTemplate.from_template(prompt_template).format(context=formatted_context, query=query)
                     raw_response = llm_engine.invoke(final_prompt)
                     
-                    # Extract text safely whether Groq returns an AIMessage object or a raw string
-                    response_text = raw_response.content if hasattr(raw_response, 'content') else str(raw_response)
+                    # Robust extraction of the clean text content from the LangChain response object
+                    if hasattr(raw_response, 'content'):
+                        response_text = raw_response.content
+                    elif isinstance(raw_response, dict) and 'content' in raw_response:
+                        response_text = raw_response['content']
+                    else:
+                        response_text = str(raw_response)
+                        
                     clean_answer = response_text.strip()
                     
                     if "[NO_DATA]" in clean_answer:
