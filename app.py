@@ -19,7 +19,7 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 
 # --- CONFIGURATION & SESSION STATE INITIALIZATION ---
 st.set_page_config(page_title="Production RAG Engine", layout="wide")
-st.title("Enterprise Open-Source RAG Engine (CPU Mode)")
+st.title("PDF RAG Engine")
 
 DB_PATH = "./qdrant_db"
 COLLECTION_NAME = "pdf_knowledge_base"
@@ -46,7 +46,7 @@ def initialize_models():
     llm = ChatGroq(
         temperature=0, 
         model_name="llama3-8b-8192", 
-        groq_api_key=st.secrets["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"] # In production, hide this in st.secrets!
+        groq_api_key=st.secrets["GROQ_API_KEY"] # In production, hide this in st.secrets!
     )
     
     return client, embeddings, reranker, llm
