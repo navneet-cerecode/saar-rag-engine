@@ -1,0 +1,11 @@
+streamlit
+pymupdf
+sentence-transformers
+qdrant-client
+langchain-huggingface
+langchain-qdrant
+langchain-groq
+tabulate
+pytesseract
+pillow
+pdf2image

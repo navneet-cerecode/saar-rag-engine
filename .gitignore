@@ -1,0 +1,10 @@
+# Python Environment
+venv/
+__pycache__/
+
+# Vector Database
+qdrant_db/
+
+# Temporary Files
+temp_*.pdf
+.env
