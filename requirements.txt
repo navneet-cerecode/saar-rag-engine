@@ -9,3 +9,4 @@ tabulate
 pytesseract
 pillow
 pdf2image
+langchain-text-splitters
