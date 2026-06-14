@@ -1,30 +1,30 @@
 import streamlit as st
 import os
-import fitz  # PyMuPDF
-from sentence_transformers import CrossEncoder
+import shutil
+import fitz
+import pytesseract
+from PIL import Image
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams
+from qdrant_client.models import VectorParams, Distance
 from qdrant_client.http import models as rest
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_qdrant import QdrantVectorStore
-from langchain_core.documents import Document
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
-import re
-from PIL import Image
-import shutil  # <--- Add this new import
-import pytesseract
+from sentence_transformers import CrossEncoder
 
+# Dynamically locate the Tesseract executable path for the current OS
+tesseract_path = shutil.which("tesseract")
+if tesseract_path:
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
+else:
+    print("Warning: Tesseract executable not found in system path.")
 
-# Tell Python where your Windows Tesseract engine is installed:
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-
-# --- CONFIGURATION & SESSION STATE INITIALIZATION ---
-st.set_page_config(page_title="Production RAG Engine", layout="wide")
-st.title("PDF RAG Engine")
-
-DB_PATH = "./qdrant_db"
-COLLECTION_NAME = "pdf_knowledge_base"
+# Configuration
+COLLECTION_NAME = "saar_documents"
+DB_PATH = "qdrant_db"
 
 @st.cache_resource
 def initialize_models():
@@ -47,32 +47,22 @@ def initialize_models():
         )
         
     # 2. Load Lightweight English Models explicitly onto the CPU
-    # ... (Keep the rest of your model loading code exactly the same)
-        
-    # 2. Load Lightweight English Models explicitly onto the CPU
     embeddings = HuggingFaceEmbeddings(
-        model_name="BAAI/bge-base-en-v1.5",
-        model_kwargs={'device': 'cpu'},
-        encode_kwargs={'normalize_embeddings': True}
+        model_name="sentence-transformers/all-mpnet-base-v2",
+        model_kwargs={'device': 'cpu'}
     )
-    reranker = CrossEncoder("BAAI/bge-reranker-base", device='cpu')
+    
+    reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', device='cpu')
+    
+    # 3. Initialize Groq Llama 3.1 
     llm = ChatGroq(
         temperature=0, 
-        model_name="llama-3.1-8b-instant", 
-        groq_api_key=st.secrets["GROQ_API_KEY"] # In production, hide this in st.secrets!
+        model_name="llama-3.1-8b-instant",  
+        groq_api_key=st.secrets["GROQ_API_KEY"]
     )
     
     return client, embeddings, reranker, llm
 
-qdrant_client, embeddings_model, reranker_model, llm_engine = initialize_models()
-
-tesseract_path = shutil.which("tesseract")
-if tesseract_path:
-    pytesseract.pytesseract.tesseract_cmd = tesseract_path
-else:
-    print("Warning: Tesseract executable not found in system path.")
-
-# --- PHASE 1: LAYOUT-AWARE INGESTION ENGINE ---
 def extract_layout_aware_pdf(file_path, progress_bar=None, status_text=None):
     doc = fitz.open(file_path)
     processed_documents = []
@@ -123,47 +113,65 @@ def extract_layout_aware_pdf(file_path, progress_bar=None, status_text=None):
 
         # 4. Chunk and save what we found
         if raw_text.strip():
-            from langchain_text_splitters import RecursiveCharacterTextSplitter
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=300, separators=["\n\n", "\n", " ", ""])
             for chunk in text_splitter.split_text(raw_text):
                 processed_documents.append(Document(page_content=chunk, metadata={"page": page_num + 1, "type": "text"}))
                 
     return processed_documents
 
-# --- UI SIDEBAR: INGESTION & SUMMARIZER ---
-with st.sidebar:
-    st.header("1. Document Ingestion")
-    uploaded_file = st.file_uploader("Upload Target PDF", type=["pdf"])
-    process_btn = st.button("Index Document", type="primary")
+# === APPLICATION UI ===
+st.set_page_config(page_title="S.A.A.R. Engine", layout="wide")
+st.title("S.A.A.R. | Semantic Analysis & Automated Retrieval")
 
-    if uploaded_file and process_btn:
+# Load models
+with st.spinner("Waking up AI models..."):
+    qdrant_client, embeddings_model, reranker_model, llm_engine = initialize_models()
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.header("Document Processing")
+    uploaded_file = st.file_uploader("Upload PDF", type="pdf")
+    
+    if uploaded_file:
         temp_path = f"temp_{uploaded_file.name}"
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
+            
+        progress_bar = st.progress(0)
+        status_text = st.empty()
         
-        st.sidebar.markdown("---")
-        status_text = st.sidebar.empty()
-        progress_bar = st.sidebar.progress(0.0)
-        
-        documents = extract_layout_aware_pdf(temp_path, progress_bar, status_text)
-        
-        status_text.text("Generating vectors (CPU Mode)...")
-        progress_bar.progress(1.0)
-        
-        vector_store = QdrantVectorStore(
-            client=qdrant_client, 
-            collection_name=COLLECTION_NAME, 
-            embedding=embeddings_model
-        )
-        vector_store.add_documents(documents)
-        
-        os.remove(temp_path)
-        status_text.text("Indexing Complete!")
-        st.sidebar.success(f"Indexed {len(documents)} blocks successfully!")
-
-    st.markdown("---")
-    st.header("2. Page Summarizer")
-    target_page = st.number_input("Target Page Number", min_value=1, step=1)
+        if st.button("Index Document"):
+            with st.spinner("Extracting text and tables..."):
+                documents = extract_layout_aware_pdf(temp_path, progress_bar, status_text)
+                
+            if documents:
+                with st.spinner("Wiping old memory and generating new embeddings..."):
+                    # 1. WIPE THE OLD MEMORY
+                    if qdrant_client.collection_exists(COLLECTION_NAME):
+                        qdrant_client.delete_collection(collection_name=COLLECTION_NAME)
+                        
+                    # 2. CREATE A FRESH, EMPTY DATABASE
+                    qdrant_client.create_collection(
+                        collection_name=COLLECTION_NAME, 
+                        vectors_config=VectorParams(size=768, distance=Distance.COSINE)
+                    )
+                    
+                    # 3. ADD THE NEW PDF
+                    vector_store = QdrantVectorStore(
+                        client=qdrant_client, collection_name=COLLECTION_NAME, embedding=embeddings_model
+                    )
+                    vector_store.add_documents(documents)
+                    
+                st.success("Document successfully indexed! Old memory wiped.")
+            else:
+                st.error("Could not extract any text from the document.")
+                
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                
+    st.divider()
+    st.header("Page Summarizer")
+    target_page = st.number_input("Enter Page Number to Summarize:", min_value=1, step=1)
     
     if st.button("Summarize Specific Page"):
         with st.spinner(f"Fetching and summarizing page {target_page}..."):
@@ -181,11 +189,11 @@ with st.sidebar:
                     page_text = "\n\n".join([record.payload.get("page_content", "") for record in records])
                     summary_prompt = f"""You are an expert technical synthesizer. Summarize the following text from Page {target_page}.
 
-                    --- PAGE TEXT ---
-                    {page_text}
-                    --- END TEXT ---
+--- PAGE TEXT ---
+{page_text}
+--- END TEXT ---
 
-                    Summary:"""
+Summary:"""
                     summary_result = llm_engine.invoke(summary_prompt)
                     
                     # Robust extraction of the clean text content from the LangChain response object
@@ -206,15 +214,14 @@ with st.sidebar:
                     st.rerun() 
             else:
                 st.error("Please index a document first.")
-# --- UI MAIN INTERFACE: CHAT PIPELINE ---
-st.markdown("### Ask specific questions about the document data")
 
+# --- MAIN CHAT UI ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
 if query := st.chat_input("Ask a specific question..."):
     st.session_state.messages.append({"role": "user", "content": query})
@@ -254,10 +261,11 @@ INSTRUCTION RULES:
 
 User Query: {query}
 Answer:"""
+                    
                     final_prompt = PromptTemplate.from_template(prompt_template).format(context=formatted_context, query=query)
                     raw_response = llm_engine.invoke(final_prompt)
                     
-                    # Robust extraction of the clean text content from the LangChain response object
+                    # Extract text safely whether Groq returns an AIMessage object or a raw string
                     if hasattr(raw_response, 'content'):
                         response_text = raw_response.content
                     elif isinstance(raw_response, dict) and 'content' in raw_response:
