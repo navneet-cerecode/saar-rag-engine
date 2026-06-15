@@ -27,23 +27,13 @@ COLLECTION_NAME = "saar_documents"
 DB_PATH = "qdrant_db"
 
 def inject_custom_css():
-    """Inject custom CSS to hide default Streamlit elements and create a minimalist dark UI."""
+    """Inject custom CSS to hide only specific elements and protect the sidebar toggle."""
     st.markdown("""
         <style>
-        /* 1. Snipe the right-side toolbar (Menu, Deploy) completely out of the DOM */
-        [data-testid="stToolbar"] { 
-            display: none !important; 
-        }
-        
-        /* 2. Remove the footer */
-        footer { 
-            display: none !important; 
-        }
-        
-        /* 3. Make the header transparent but leave its structural behavior alone */
-        header { 
-            background: transparent !important; 
-        }
+        /* Snipe ONLY the deploy button and hamburger menu, leaving the header structure completely alone */
+        .stAppDeployButton { display: none !important; }
+        [data-testid="stMainMenu"] { display: none !important; }
+        footer { display: none !important; }
         
         /* Widen the main container and remove top padding */
         .block-container {
@@ -173,7 +163,7 @@ def extract_layout_aware_pdf(file_path, progress_bar=None, status_text=None):
     return processed_documents
 
 # === APPLICATION UI ===
-st.set_page_config(page_title="S.A.A.R. Engine", page_icon="✨", layout="wide")
+st.set_page_config(page_title="S.A.A.R. Engine", page_icon="✨", layout="expanded")
 inject_custom_css()
 
 with st.spinner("Waking up AI models..."):
