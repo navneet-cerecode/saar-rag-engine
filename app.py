@@ -266,14 +266,19 @@ if "messages" not in st.session_state:
 def set_query(query_text):
     st.session_state.suggestion_query = query_text
 
-# Check if a suggestion was clicked
+# 1. Capture User Input (from text box or suggestion pill)
 user_query = st.chat_input("Ask a question about your document...")
 if "suggestion_query" in st.session_state:
     user_query = st.session_state.suggestion_query
     del st.session_state.suggestion_query
 
-# 1. EMPTY STATE UI (Centered Hero Section)
+# 2. Append user query to history immediately if it exists
+if user_query:
+    st.session_state.messages.append({"role": "user", "content": user_query, "avatar": "🧑‍💻"})
+
+# 3. Render the UI
 if not st.session_state.messages:
+    # Empty State Welcome Screen
     st.markdown("<div style='height: 15vh;'></div>", unsafe_allow_html=True)
     st.markdown("<div class='hero-title'>S.A.A.R. Assistant</div>", unsafe_allow_html=True)
     st.markdown("<div class='hero-subtitle'>Upload a document in the sidebar to begin analysis.</div>", unsafe_allow_html=True)
@@ -289,22 +294,15 @@ if not st.session_state.messages:
     with col4:
         st.button("📝 Summarize conclusions", on_click=set_query, args=("What are the final conclusions or results?",), use_container_width=True)
 
-# 2. ACTIVE CHAT UI
 else:
+    # Display Chat History with Custom Avatars
     for message in st.session_state.messages:
         avatar = message.get("avatar", "🧑‍💻" if message["role"] == "user" else "✨")
         with st.chat_message(message["role"], avatar=avatar):
             st.markdown(message["content"])
 
-# 3. CHAT EXECUTION BLOCK
+# 4. Process the Assistant's Response
 if user_query:
-    st.session_state.messages.append({"role": "user", "content": user_query, "avatar": "🧑‍💻"})
-    if len(st.session_state.messages) == 1:
-        st.rerun() # Force a rerun if this is the first message to clear the hero section smoothly
-        
-    with st.chat_message("user", avatar="🧑‍💻"):
-        st.markdown(user_query)
-        
     with st.chat_message("assistant", avatar="✨"):
         with st.spinner("Retrieving context..."):
             if qdrant_client.collection_exists(COLLECTION_NAME):
