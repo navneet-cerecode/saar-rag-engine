@@ -163,7 +163,7 @@ def extract_layout_aware_pdf(file_path, progress_bar=None, status_text=None):
     return processed_documents
 
 # === APPLICATION UI ===
-st.set_page_config(page_title="S.A.A.R. Engine", page_icon="✨", layout="expanded")
+st.set_page_config(page_title="S.A.A.R. Engine", page_icon="✨", layout="wide", initial_sidebar_state="expanded")
 inject_custom_css()
 
 with st.spinner("Waking up AI models..."):
