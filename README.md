@@ -58,28 +58,3 @@ streamlit run app.py
 4. Use the **Main Chat** or suggested prompt pills to query the entire knowledge base.
 
 ---
-
-## The Architecture Diagram Flow
-To make this project look incredibly professional on your GitHub or resume, create a visual flowchart. Here is the exact logical flow you should map out in a diagram tool (like Draw.io or Excalidraw):
-
-**Phase 1: Ingestion & Processing (The Eyes)**
-* `[Box 1]` **User** -> Uploads PDF Document.
-* `[Box 2]` **PyMuPDF Engine** -> Scans page layout.
-    * *Branch A:* Finds Tables -> Converts to Markdown.
-    * *Branch B:* Finds Digital Text -> Extracts string.
-    * *Branch C (Fallback):* Finds Scanned Images -> Routes to **Tesseract OCR**.
-* `[Box 3]` **LangChain Splitter** -> Chunks combined text into 1,500-character overlapping blocks.
-
-**Phase 2: Embedding & Storage (The Memory)**
-* `[Box 4]` **HuggingFace (`mpnet-v2`)** -> Converts text chunks into 768-dimensional vectors.
-* `[Box 5]` **Local Qdrant DB** -> Stores vectors securely on disk (with Self-Healing mechanism).
-
-**Phase 3: Retrieval & Reranking (The Search)**
-* `[Box 6]` **User Query** -> Passed into the chat UI.
-* `[Box 7]` **Vector Search** -> Qdrant retrieves the Top 20 mathematically similar chunks.
-* `[Box 8]` **Cross-Encoder Reranker** -> Evaluates the Top 20 against the query logically, filtering down to the absolute Top 4 chunks.
-
-**Phase 4: Synthesis (The Brain)**
-* `[Box 9]` **LangChain Prompt Template** -> Merges the User Query with the Top 4 Context Blocks.
-* `[Box 10]` **Groq API (Llama 3.1)** -> Reads the prompt, executes inference, and generates the final markdown answer.
-* `[Box 11]` **Streamlit UI** -> Displays clean text to the user.
