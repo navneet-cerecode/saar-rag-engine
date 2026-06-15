@@ -30,25 +30,19 @@ def inject_custom_css():
     """Inject custom CSS to hide default Streamlit elements and create a minimalist dark UI."""
     st.markdown("""
         <style>
-        /* Hide the right-side toolbar (Menu, Deploy) */
-        [data-testid="stToolbar"] {visibility: hidden !important;}
-        footer {visibility: hidden !important;}
-        
-        /* Keep header active but transparent */
-        header {
-            background: transparent !important;
-            visibility: visible !important;
+        /* 1. Snipe the right-side toolbar (Menu, Deploy) completely out of the DOM */
+        [data-testid="stToolbar"] { 
+            display: none !important; 
         }
         
-        /* === BRUTE-FORCE SIDEBAR TOGGLE VISIBILITY === */
-        [data-testid="collapsedControl"] {
-            visibility: visible !important;
-            display: flex !important;
-            z-index: 999999 !important;
-            color: #ffffff !important;
-            background-color: #1e1e20 !important;
-            border-radius: 50% !important;
-            padding: 0.2rem !important;
+        /* 2. Remove the footer */
+        footer { 
+            display: none !important; 
+        }
+        
+        /* 3. Make the header transparent but leave its structural behavior alone */
+        header { 
+            background: transparent !important; 
         }
         
         /* Widen the main container and remove top padding */
