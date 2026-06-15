@@ -3,6 +3,10 @@
 
 S.A.A.R. is a production-ready, layout-aware Retrieval-Augmented Generation (RAG) system. Built to process complex PDF documents, it features intelligent OCR fallbacks, local vector search, semantic reranking, and hardware-accelerated LLM inference via Groq to provide instantaneous, highly accurate document intelligence.
 
+## Live Demo
+Experience the engine in action without installing any dependencies. 
+**[Launch S.A.A.R. Engine Live](https://saar-rag-engine.streamlit.app/)**
+
 ## Enterprise-Grade Features
 * **Layout-Aware Ingestion:** Utilizes `PyMuPDF` to intelligently separate structural tables (converted to Markdown) from standard digital text to preserve contextual boundaries.
 * **Automated OCR Fallback:** Integrates `Tesseract OCR` to dynamically scan and extract text from image-based PDF pages when digital text is absent.
