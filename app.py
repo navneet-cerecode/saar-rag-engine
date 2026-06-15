@@ -27,36 +27,55 @@ COLLECTION_NAME = "saar_documents"
 DB_PATH = "qdrant_db"
 
 def inject_custom_css():
-    """Inject custom CSS to hide default Streamlit elements and polish the UI."""
+    """Inject custom CSS to hide default Streamlit elements and create a minimalist dark UI."""
     st.markdown("""
         <style>
-        /* Hide main menu and footer */
+        /* Hide main menu, header, and footer */
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
         
-        /* Adjust top padding for a cleaner look */
+        /* Widen the main container and remove top padding */
         .block-container {
             padding-top: 2rem;
-            padding-bottom: 2rem;
-            max-width: 900px;
+            padding-bottom: 5rem;
+            max-width: 850px;
         }
         
-        /* Style the chat input container */
+        /* Style the chat input container to float cleanly */
         .stChatInputContainer {
             padding-bottom: 20px;
+            background-color: transparent !important;
         }
         
-        /* Sidebar styling */
-        [data-testid="stSidebar"] {
-            background-color: #f8f9fa;
+        /* Centered Hero Section */
+        .hero-title {
+            text-align: center;
+            font-size: 3rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #ffffff;
+        }
+        .hero-subtitle {
+            text-align: center;
+            color: #a0aec0;
+            font-size: 1.1rem;
+            margin-bottom: 3rem;
         }
         
-        /* Dark mode compatibility for sidebar */
-        @media (prefers-color-scheme: dark) {
-            [data-testid="stSidebar"] {
-                background-color: #1e1e20;
-            }
+        /* Custom Pill Buttons for suggestions */
+        div[data-testid="stButton"] button {
+            border-radius: 20px;
+            border: 1px solid #4a5568;
+            background-color: transparent;
+            color: #e2e8f0;
+            padding: 0.5rem 1rem;
+            transition: all 0.2s;
+        }
+        div[data-testid="stButton"] button:hover {
+            border-color: #cbd5e0;
+            color: #ffffff;
+            background-color: rgba(255, 255, 255, 0.05);
         }
         </style>
     """, unsafe_allow_html=True)
@@ -147,17 +166,13 @@ def extract_layout_aware_pdf(file_path, progress_bar=None, status_text=None):
 st.set_page_config(page_title="S.A.A.R. Engine", page_icon="✨", layout="wide")
 inject_custom_css()
 
-st.title("S.A.A.R. ✨")
-st.markdown("**Semantic Analysis & Automated Retrieval**")
-
 with st.spinner("Waking up AI models..."):
     qdrant_client, embeddings_model, reranker_model, llm_engine = initialize_models()
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.image("https://img.icons8.com/fluency/96/000000/artificial-intelligence.png", width=60)
-    st.header("Control Panel")
-    st.markdown("Upload and index your documents here.")
+    st.markdown("<h2 style='text-align: center; padding-top: 10px;'>S.A.A.R. Data Hub</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: gray; font-size: 0.9rem;'>Upload documents to the knowledge base.</p>", unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader("Upload PDF Document", type="pdf", label_visibility="collapsed")
     
@@ -247,22 +262,48 @@ Summary:"""
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Empty State Welcome Screen
+# Logic to handle prompt suggestion clicks
+def set_query(query_text):
+    st.session_state.suggestion_query = query_text
+
+# Check if a suggestion was clicked
+user_query = st.chat_input("Ask a question about your document...")
+if "suggestion_query" in st.session_state:
+    user_query = st.session_state.suggestion_query
+    del st.session_state.suggestion_query
+
+# 1. EMPTY STATE UI (Centered Hero Section)
 if not st.session_state.messages:
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; color: gray;'>Welcome to S.A.A.R.</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: gray;'>Upload and index a PDF in the sidebar, then ask me anything about it.</p>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 15vh;'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='hero-title'>S.A.A.R. Assistant</div>", unsafe_allow_html=True)
+    st.markdown("<div class='hero-subtitle'>Upload a document in the sidebar to begin analysis.</div>", unsafe_allow_html=True)
+    
+    # Suggested Prompt Pills
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+    with col1:
+        st.button("📄 What is this document about?", on_click=set_query, args=("What is the overall summary of this document?",), use_container_width=True)
+    with col2:
+        st.button("🔍 Find key methodologies", on_click=set_query, args=("Extract the key methodologies and techniques mentioned.",), use_container_width=True)
+    with col3:
+        st.button("📊 Extract numerical data", on_click=set_query, args=("List the important metrics, numbers, and data points found.",), use_container_width=True)
+    with col4:
+        st.button("📝 Summarize conclusions", on_click=set_query, args=("What are the final conclusions or results?",), use_container_width=True)
 
-# Display Chat History with Custom Avatars
-for message in st.session_state.messages:
-    avatar = message.get("avatar", "🧑‍💻" if message["role"] == "user" else "✨")
-    with st.chat_message(message["role"], avatar=avatar):
-        st.markdown(message["content"])
+# 2. ACTIVE CHAT UI
+else:
+    for message in st.session_state.messages:
+        avatar = message.get("avatar", "🧑‍💻" if message["role"] == "user" else "✨")
+        with st.chat_message(message["role"], avatar=avatar):
+            st.markdown(message["content"])
 
-if query := st.chat_input("Ask a specific question..."):
-    st.session_state.messages.append({"role": "user", "content": query, "avatar": "🧑‍💻"})
+# 3. CHAT EXECUTION BLOCK
+if user_query:
+    st.session_state.messages.append({"role": "user", "content": user_query, "avatar": "🧑‍💻"})
+    if len(st.session_state.messages) == 1:
+        st.rerun() # Force a rerun if this is the first message to clear the hero section smoothly
+        
     with st.chat_message("user", avatar="🧑‍💻"):
-        st.markdown(query)
+        st.markdown(user_query)
         
     with st.chat_message("assistant", avatar="✨"):
         with st.spinner("Retrieving context..."):
@@ -271,10 +312,10 @@ if query := st.chat_input("Ask a specific question..."):
                     client=qdrant_client, collection_name=COLLECTION_NAME, embedding=embeddings_model
                 )
                 
-                initial_docs = vector_store.similarity_search(query, k=20)
+                initial_docs = vector_store.similarity_search(user_query, k=20)
                 
                 if initial_docs:
-                    pairs = [[query, doc.page_content] for doc in initial_docs]
+                    pairs = [[user_query, doc.page_content] for doc in initial_docs]
                     scores = reranker_model.predict(pairs)
                     reranked_docs = sorted(zip(initial_docs, scores), key=lambda x: x[1], reverse=True)[:4]
                     relevant_chunks = [doc for doc, score in reranked_docs]
@@ -298,7 +339,7 @@ INSTRUCTION RULES:
 User Query: {query}
 Answer:"""
                     
-                    final_prompt = PromptTemplate.from_template(prompt_template).format(context=formatted_context, query=query)
+                    final_prompt = PromptTemplate.from_template(prompt_template).format(context=formatted_context, query=user_query)
                     raw_response = llm_engine.invoke(final_prompt)
                     
                     if hasattr(raw_response, 'content'):
